@@ -1,0 +1,15 @@
+# Системное
+.env
+*.exe
+*.test
+
+# Go
+vendor/
+
+# Swagger (сгенерированный)
+docs/swagger.json
+docs/swagger.yaml
+docs/docs.go
+
+# Docker
+docker-compose.override.yml
