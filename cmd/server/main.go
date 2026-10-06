@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 
+	"github.com/april1858/subscriptions-service/cmd/server/handlers"
 	"github.com/april1858/subscriptions-service/internal/config"
 	"github.com/april1858/subscriptions-service/internal/repository"
 	"github.com/april1858/subscriptions-service/pkg/logger"
@@ -72,17 +74,28 @@ func main() {
 	l.Info("migrations applied successfully")
 
 	// --- 5. HTTP-СЕРВЕР ---
-	// Gin как HTTP-фреймворк. Пока только /health — проверка живости.
-	//
-	// На Дне 3 сюда добавятся хендлеры CRUD, а логгер будет передаваться
-	// через middleware (ginzap). Пока — базовый Recovery middleware,
-	// который ловит паники в хендлерах и не роняет весь сервер.
-	r := gin.New()
-	r.Use(gin.Recovery())
 
+	repo := repository.NewSubscriptionRepository(pool)
+	h := handlers.NewSubscriptionHandlers(repo)
+
+	r := gin.Default()
+
+	// CRUD для подписок
+	r.POST("/subscriptions", h.Create)
+	r.GET("/subscriptions", h.List)
+	r.GET("/subscriptions/:id", h.Get)
+	r.PUT("/subscriptions/:id", h.Update)
+	r.DELETE("/subscriptions/:id", h.Delete)
+
+	// health
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		c.JSON(200, gin.H{"status": "ok"})
 	})
+
+	if err := r.Run(fmt.Sprintf(":%d", cfg.Server.Port)); err != nil {
+		l.Error("failed to start server", zap.Error(err))
+		os.Exit(1)
+	}
 
 	srv := &http.Server{
 		Addr:    ":" + "8080",
