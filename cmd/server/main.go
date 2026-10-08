@@ -13,9 +13,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 
-	"github.com/april1858/subscriptions-service/cmd/server/handlers"
 	"github.com/april1858/subscriptions-service/internal/config"
 	"github.com/april1858/subscriptions-service/internal/dto"
+	"github.com/april1858/subscriptions-service/internal/handlers"
 	"github.com/april1858/subscriptions-service/internal/middleware"
 	"github.com/april1858/subscriptions-service/internal/repository"
 	"github.com/april1858/subscriptions-service/pkg/logger"
