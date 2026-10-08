@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/april1858/subscriptions-service/internal/domain"
+	"github.com/april1858/subscriptions-service/internal/dto"
 	"github.com/april1858/subscriptions-service/internal/repository"
 	"github.com/gin-gonic/gin"
 )
@@ -17,16 +18,36 @@ func NewSubscriptionHandlers(repo repository.SubscriptionRepository) *Subscripti
 }
 
 func (h *SubscriptionHandlers) Create(c *gin.Context) {
-	var input domain.Subscription
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload", "details": err.Error()})
+	// Достаём уже валидированное тело из контекста
+	body, ok := c.Get("validatedBody")
+	if !ok {
+		// Это значит, что middleware не сработал или был пропущен — лучше вернуть 400
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing validated body"})
 		return
 	}
 
-	created, err := h.repo.Create(c.Request.Context(), input)
+	req, ok := body.(dto.CreateSubscriptionRequest)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "type assertion failed"})
+		return
+	}
+
+	// Превращаем DTO в доменную модель (если нужно)
+	sub := domain.Subscription{
+		ServiceName: req.ServiceName,
+		Price:       req.Price,
+		UserID:      req.UserID,
+		StartDate:   req.StartDate,
+	}
+
+	repo := c.MustGet("subscriptionRepo").(repository.SubscriptionRepository)
+	created, err := repo.Create(c.Request.Context(), sub)
 	if err != nil {
-		// Можно добавить логирование через zap, если передадим логгер в хендлеры
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create subscription", "details": err.Error()})
+		// Тут уже могут быть ошибки БД (включая твой CHECK)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "failed to create subscription",
+			"details": err.Error(),
+		})
 		return
 	}
 

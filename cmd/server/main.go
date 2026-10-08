@@ -15,6 +15,8 @@ import (
 
 	"github.com/april1858/subscriptions-service/cmd/server/handlers"
 	"github.com/april1858/subscriptions-service/internal/config"
+	"github.com/april1858/subscriptions-service/internal/dto"
+	"github.com/april1858/subscriptions-service/internal/middleware"
 	"github.com/april1858/subscriptions-service/internal/repository"
 	"github.com/april1858/subscriptions-service/pkg/logger"
 )
@@ -66,7 +68,6 @@ func main() {
 	// Техника: Auto-migration on startup — не нужно помнить
 	// «а накатил ли я миграции?» — сервис сам это делает.
 	// goose.Up идемпотентен: если все миграции уже применены, он ничего не делает.
-	l.Info("applying migrations")
 	if err := repository.RunMigrations(cfg.ConnString(), "./migrations"); err != nil {
 		l.Error("migrations failed", zap.Error(err))
 		return // не стартуем сервер, если миграции упали
@@ -81,7 +82,7 @@ func main() {
 	r := gin.Default()
 
 	// CRUD для подписок
-	r.POST("/subscriptions", h.Create)
+	r.POST("/subscriptions", middleware.ValidateJSONBody[dto.CreateSubscriptionRequest](), h.Create)
 	r.GET("/subscriptions", h.List)
 	r.GET("/subscriptions/:id", h.Get)
 	r.PUT("/subscriptions/:id", h.Update)

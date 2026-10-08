@@ -17,13 +17,13 @@ import "time"
 // Домен не знает, как именно эти теги используются —
 // он просто их декларирует.
 type Subscription struct {
-	ID          string    `json:"id" db:"id"`
-	ServiceName string    `json:"service_name" db:"service_name"`
-	Price       int       `json:"price" db:"price"`
-	UserID      string    `json:"user_id" db:"user_id"`
-	StartDate   string    `json:"start_date" db:"start_date"` // формат "MM-YYYY"
-	EndDate     *string   `json:"end_date,omitempty" db:"end_date"`
-	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	ID          string    `json:"id"`
+	ServiceName string    `json:"service_name"`
+	Price       int       `json:"price"`
+	UserID      string    `json:"user_id"`
+	StartDate   string    `json:"start_date"` // формат "MM-YYYY"
+	EndDate     *string   `json:"end_date,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // EndDate — указатель (*string), потому что подписка может быть активной
