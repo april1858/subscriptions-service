@@ -81,8 +81,14 @@ func main() {
 
 	r := gin.Default()
 
+	// 4. Регистрируем роуты с middleware и хендлером
+	r.POST("/subscriptions",
+		middleware.ValidateJSONBody[dto.CreateSubscriptionRequest](),
+		h.Create,
+	)
+
 	// CRUD для подписок
-	r.POST("/subscriptions", middleware.ValidateJSONBody[dto.CreateSubscriptionRequest](), h.Create)
+	//r.POST("/subscriptions", middleware.ValidateJSONBody[dto.CreateSubscriptionRequest](), h.Create)
 	r.GET("/subscriptions", h.List)
 	r.GET("/subscriptions/:id", h.Get)
 	r.PUT("/subscriptions/:id", h.Update)

@@ -51,7 +51,6 @@ func ValidateJSONBody[T any]() gin.HandlerFunc {
 
 		// Если всё ок — кладём валидированное тело в контекст, чтобы хендлер мог его достать
 		c.Set("validatedBody", body)
-		c.Set("subscriptionRepo", repo)
 		c.Next()
 	}
 }

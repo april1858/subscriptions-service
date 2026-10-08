@@ -18,10 +18,8 @@ func NewSubscriptionHandlers(repo repository.SubscriptionRepository) *Subscripti
 }
 
 func (h *SubscriptionHandlers) Create(c *gin.Context) {
-	// Достаём уже валидированное тело из контекста
 	body, ok := c.Get("validatedBody")
 	if !ok {
-		// Это значит, что middleware не сработал или был пропущен — лучше вернуть 400
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing validated body"})
 		return
 	}
@@ -32,18 +30,17 @@ func (h *SubscriptionHandlers) Create(c *gin.Context) {
 		return
 	}
 
-	// Превращаем DTO в доменную модель (если нужно)
 	sub := domain.Subscription{
 		ServiceName: req.ServiceName,
 		Price:       req.Price,
-		UserID:      req.UserID,
+		UserID:      req.UserID, // если uuid.UUID, то req.UserID.String()
 		StartDate:   req.StartDate,
 	}
 
-	repo := c.MustGet("subscriptionRepo").(repository.SubscriptionRepository)
-	created, err := repo.Create(c.Request.Context(), sub)
+	// Используем репозиторий, который уже есть у хендлера:
+	created, err := h.repo.Create(c.Request.Context(), sub)
 	if err != nil {
-		// Тут уже могут быть ошибки БД (включая твой CHECK)
+		// Тут могут быть ошибки БД (включая твой CHECK)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "failed to create subscription",
 			"details": err.Error(),
