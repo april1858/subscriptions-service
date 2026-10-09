@@ -20,7 +20,7 @@ type SubscriptionRepository interface {
 	Create(ctx context.Context, sub domain.Subscription) (*domain.Subscription, error)
 	Get(ctx context.Context, id string) (*domain.Subscription, error)
 	List(ctx context.Context) ([]domain.Subscription, error)
-	Update(ctx context.Context, id string, sub domain.SubscriptionUpdate) error
+	Update(ctx context.Context, id string, sub domain.SubscriptionUpdate) (domain.Subscription, error)
 	Delete(ctx context.Context, id string) error
 }
 
