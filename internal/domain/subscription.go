@@ -33,3 +33,9 @@ type Subscription struct {
 // Цена — int, а не float64: в задании сказано «целое число рублей».
 // Использование int вместо float64 для денег — осознанное решение:
 // avoids floating-point errors (0.1 + 0.2 != 0.3 в IEEE 754).
+
+type SubscriptionUpdate struct {
+	ServiceName *string `json:"service_name"`
+	Price       *int    `json:"price"`
+	StartDate   *string `json:"start_date"` // формат "MM-YYYY"
+}

@@ -87,11 +87,13 @@ func main() {
 		h.Create,
 	)
 
-	// CRUD для подписок
-	//r.POST("/subscriptions", middleware.ValidateJSONBody[dto.CreateSubscriptionRequest](), h.Create)
 	r.GET("/subscriptions", h.List)
 	r.GET("/subscriptions/:id", h.Get)
-	r.PUT("/subscriptions/:id", h.Update)
+	r.PUT("/subscriptions/:id",
+		middleware.ValidateJSONBody[dto.UpdateSubscriptionRequest](),
+		h.Update,
+	)
+
 	r.DELETE("/subscriptions/:id", h.Delete)
 
 	// health

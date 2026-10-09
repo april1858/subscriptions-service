@@ -77,27 +77,45 @@ func (h *SubscriptionHandlers) List(c *gin.Context) {
 }
 
 func (h *SubscriptionHandlers) Update(c *gin.Context) {
+	// 1. Достаём ID из URL
 	id := c.Param("id")
-	var input domain.Subscription
-	input.ID = id // ID из URL
-
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid payload", "details": err.Error()})
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing subscription id in path"})
 		return
 	}
 
-	err := h.repo.Update(c.Request.Context(), input)
-	if err == repository.ErrSubscriptionNotFound {
-		c.JSON(http.StatusNotFound, gin.H{"error": "subscription not found"})
+	// 2. Достаём валидированное тело из контекста (от middleware)
+	body, ok := c.Get("validatedBody")
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing validated body"})
 		return
 	}
+
+	req, ok := body.(dto.UpdateSubscriptionRequest)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "type assertion failed"})
+		return
+	}
+
+	// 3. Формируем DTO для репозитория (или маппим в domain.UpdateFields)
+	// Здесь ты можешь сделать структуру UpdateFields в domain, где все поля — указатели.
+	updateFields := domain.SubscriptionUpdate{
+		ServiceName: req.ServiceName,
+		Price:       req.Price,
+		StartDate:   req.StartDate,
+	}
+
+	// 4. Вызываем репозиторий
+	updated, err := h.repo.Update(c.Request.Context(), id, updateFields)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update subscription", "details": err.Error()})
+		// Тут могут быть ошибки БД: не найден, конфликт, нарушение CHECK и т.д.
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "failed to update subscription",
+			"details": err.Error(),
+		})
 		return
 	}
 
-	// Возвращаем обновлённую подписку
-	updated, _ := h.repo.Get(c.Request.Context(), id) // упрощение: можно вернуть input или сделать отдельный метод
 	c.JSON(http.StatusOK, updated)
 }
 
