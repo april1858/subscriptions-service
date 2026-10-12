@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 
 	"github.com/april1858/subscriptions-service/internal/domain"
 )
@@ -25,17 +26,19 @@ type SubscriptionRepository interface {
 }
 
 type subscriptionRepo struct {
-	pool *pgxpool.Pool
+	db  *pgxpool.Pool
+	log *zap.Logger // вот откуда берётся log: это поле структуры
 }
 
-func NewSubscriptionRepository(pool *pgxpool.Pool) *subscriptionRepo {
-	return &subscriptionRepo{pool: pool}
+func NewSubscriptionRepository(pool *pgxpool.Pool, l *zap.Logger) *subscriptionRepo {
+	return &subscriptionRepo{db: pool, log: l}
 }
 
 // Create вставляет подписку и возвращает её с ID (если он генерируется в БД)
 func (r *subscriptionRepo) Create(ctx context.Context, sub domain.Subscription) (*domain.Subscription, error) {
+	r.log.Info("starting CREATE", zap.String("id", "CREATE")) // r.log — это наш экземпляр
 	var created domain.Subscription
-	err := r.pool.QueryRow(ctx, `
+	err := r.db.QueryRow(ctx, `
 		INSERT INTO subscriptions (service_name, price, user_id, start_date)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, service_name, price, user_id, start_date
@@ -54,8 +57,9 @@ func (r *subscriptionRepo) Create(ctx context.Context, sub domain.Subscription) 
 
 // Get ищет по ID
 func (r *subscriptionRepo) Get(ctx context.Context, id string) (*domain.Subscription, error) {
+	r.log.Info("starting GET", zap.String("id", id)) // r.log — это наш экземпляр
 	var sub domain.Subscription
-	err := r.pool.QueryRow(ctx, "SELECT id, service_name, price, user_id, start_date FROM subscriptions WHERE id = $1", id).Scan(
+	err := r.db.QueryRow(ctx, "SELECT id, service_name, price, user_id, start_date FROM subscriptions WHERE id = $1", id).Scan(
 		&sub.ID,
 		&sub.ServiceName,
 		&sub.Price,
@@ -73,7 +77,8 @@ func (r *subscriptionRepo) Get(ctx context.Context, id string) (*domain.Subscrip
 
 // List возвращает все подписки
 func (r *subscriptionRepo) List(ctx context.Context) ([]domain.Subscription, error) {
-	rows, err := r.pool.Query(ctx, "SELECT id, service_name, price, user_id, start_date FROM subscriptions")
+	r.log.Info("starting LIST", zap.String("id", "LIST")) // r.log — это наш экземпляр
+	rows, err := r.db.Query(ctx, "SELECT id, service_name, price, user_id, start_date FROM subscriptions")
 	if err != nil {
 		return nil, fmt.Errorf("list subscriptions: %w", err)
 	}
@@ -91,36 +96,32 @@ func (r *subscriptionRepo) List(ctx context.Context) ([]domain.Subscription, err
 }
 
 // Update обновляет существующую подписку (по ID)
-func (r *subscriptionRepo) Update(ctx context.Context, id string, fields domain.SubscriptionUpdate) (domain.Subscription, error) {
-	// 1. Сначала читаем, чтобы вернуть актуальную запись (или проверить существование)
-	sub, err := r.Get(ctx, id)
-	if err != nil {
-		return domain.Subscription{}, err
-	}
+// internal/repository/subscription_repository.go
 
-	// Если ничего не обновляем — возвращаем текущее состояние
+func (r *subscriptionRepo) Update(ctx context.Context, id string, fields domain.SubscriptionUpdate) (domain.Subscription, error) {
+	// Если вообще ничего не обновляем — можно сразу вернуть ErrNoRows как «не нашли»
 	if fields.ServiceName == nil && fields.Price == nil && fields.StartDate == nil {
-		return *sub, nil
+		return domain.Subscription{}, pgx.ErrNoRows
 	}
 
 	var sets []string
-	var args []interface{}
-	argIndex := 1
+	var args []any
+	i := 1
 
 	if fields.ServiceName != nil {
-		sets = append(sets, fmt.Sprintf("service_name = $%d", argIndex))
+		sets = append(sets, fmt.Sprintf("service_name = $%d", i))
 		args = append(args, *fields.ServiceName)
-		argIndex++
+		i++
 	}
 	if fields.Price != nil {
-		sets = append(sets, fmt.Sprintf("price = $%d", argIndex))
+		sets = append(sets, fmt.Sprintf("price = $%d", i))
 		args = append(args, *fields.Price)
-		argIndex++
+		i++
 	}
 	if fields.StartDate != nil {
-		sets = append(sets, fmt.Sprintf("start_date = $%d", argIndex))
+		sets = append(sets, fmt.Sprintf("start_date = $%d", i))
 		args = append(args, *fields.StartDate)
-		argIndex++
+		i++
 	}
 
 	query := fmt.Sprintf(`
@@ -128,26 +129,22 @@ func (r *subscriptionRepo) Update(ctx context.Context, id string, fields domain.
 		SET %s
 		WHERE id = $%d
 		RETURNING id, service_name, price, user_id, start_date
-	`, strings.Join(sets, ", "), argIndex)
+	`, strings.Join(sets, ", "), i)
 
-	args = append(args, id) // последний аргумент — id
+	args = append(args, id)
 
-	// ВАЖНО: для pgxpool используем QueryRowContext (с контекстом!)
+	row := r.db.QueryRow(ctx, query, args...)
+	var sub domain.Subscription
+	err := row.Scan(&sub.ID, &sub.ServiceName, &sub.Price, &sub.UserID, &sub.StartDate)
 
-	row := r.pool.QueryRow(ctx, query, args...)
-
-	err = row.Scan(&sub.ID, &sub.ServiceName, &sub.Price, &sub.UserID, &sub.StartDate)
-	if err != nil {
-		// Если строки не нашлось — будет pgx.ErrNoRows
-		return domain.Subscription{}, err
-	}
-
-	return *sub, nil
+	// ✅ Самое важное: возвращаем err как есть. Если это pgx.ErrNoRows — он долетит до хендлера.
+	return sub, err
 }
 
 // Delete удаляет подписку по ID
 func (r *subscriptionRepo) Delete(ctx context.Context, id string) error {
-	result, err := r.pool.Exec(ctx, "DELETE FROM subscriptions WHERE id = $1", id)
+	r.log.Info("starting DELETE", zap.String("id", id)) // r.log — это наш экземпляр
+	result, err := r.db.Exec(ctx, "DELETE FROM subscriptions WHERE id = $1", id)
 	if err != nil {
 		return fmt.Errorf("delete subscription: %w", err)
 	}

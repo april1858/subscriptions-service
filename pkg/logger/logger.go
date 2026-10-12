@@ -1,6 +1,8 @@
 package logger
 
-import "go.uber.org/zap"
+import (
+	"go.uber.org/zap"
+)
 
 // New создаёт настроенный логгер Zap.
 //
@@ -10,19 +12,11 @@ import "go.uber.org/zap"
 // Техника: один логгер на всё приложение (Singleton-подобный паттерн).
 // Создаётся в main, передаётся по ссылкам — не глобальная переменная,
 // а явно инжектируемая зависимость (Dependency Injection).
-func New(level string) (*zap.Logger, error) {
-	var l *zap.Logger
-	var err error
 
-	switch level {
-	case "debug":
-		l, err = zap.NewDevelopment()
-	default:
-		l, err = zap.NewProduction()
+// NewLogger создаёт логгер с заданной конфигурацией
+func NewLogger(prod bool) (*zap.Logger, error) {
+	if prod {
+		return zap.NewProduction()
 	}
-
-	if err != nil {
-		return nil, err
-	}
-	return l, nil
+	return zap.NewDevelopment()
 }

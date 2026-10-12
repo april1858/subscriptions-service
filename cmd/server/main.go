@@ -9,9 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"go.uber.org/zap"
+	_ "github.com/april1858/subscriptions-service/docs"
 
 	"github.com/april1858/subscriptions-service/internal/config"
 	"github.com/april1858/subscriptions-service/internal/dto"
@@ -19,6 +17,11 @@ import (
 	"github.com/april1858/subscriptions-service/internal/middleware"
 	"github.com/april1858/subscriptions-service/internal/repository"
 	"github.com/april1858/subscriptions-service/pkg/logger"
+	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -33,10 +36,12 @@ func main() {
 	// --- 2. ЛОГГЕР ---
 	// Создаётся сразу после конфига — нужен всем слоям ниже.
 	// Dependency Injection: логгер передаётся в конструкторы, а не берётся из глобальной переменной.
-	l, err := logger.New(cfg.Logger.Level)
+
+	l, err := logger.NewLogger(false) // development
 	if err != nil {
-		log.Fatalf("failed to init logger: %v", err)
+		log.Fatal("failed to create logger", zap.Error(err))
 	}
+
 	defer l.Sync() // flush буфера логов при завершении
 
 	// --- 3. ПУЛ СОЕДИНЕНИЙ С БД ---
@@ -76,10 +81,11 @@ func main() {
 
 	// --- 5. HTTP-СЕРВЕР ---
 
-	repo := repository.NewSubscriptionRepository(pool)
-	h := handlers.NewSubscriptionHandlers(repo)
+	repo := repository.NewSubscriptionRepository(pool, l)
+	h := handlers.NewSubscriptionHandlers(repo, l)
 
 	r := gin.Default()
+	r.Use(middleware.LogRequests(l)) // логирует все HTTP-запросы
 
 	// 4. Регистрируем роуты с middleware и хендлером
 	r.POST("/subscriptions",
@@ -101,6 +107,8 @@ func main() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
 	if err := r.Run(fmt.Sprintf(":%d", cfg.Server.Port)); err != nil {
 		l.Error("failed to start server", zap.Error(err))
 		os.Exit(1)
@@ -119,7 +127,7 @@ func main() {
 	// дорабатывает текущие, и только потом завершается.
 	// Это prevents dropping in-flight requests.
 	go func() {
-		l.Info("service started")
+		l.Info("server starting", zap.String("addr", ":8080"))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			l.Error("http server error", zap.Error(err))
 		}

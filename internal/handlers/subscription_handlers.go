@@ -1,23 +1,34 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/april1858/subscriptions-service/internal/domain"
 	"github.com/april1858/subscriptions-service/internal/dto"
 	"github.com/april1858/subscriptions-service/internal/repository"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
+	"go.uber.org/zap"
 )
 
 type SubscriptionHandlers struct {
 	repo repository.SubscriptionRepository
+	log  *zap.Logger
 }
 
-func NewSubscriptionHandlers(repo repository.SubscriptionRepository) *SubscriptionHandlers {
-	return &SubscriptionHandlers{repo: repo}
+func NewSubscriptionHandlers(repo repository.SubscriptionRepository, l *zap.Logger) *SubscriptionHandlers {
+	return &SubscriptionHandlers{repo: repo, log: l}
 }
 
+// @Summary Создать подписку
+// @Tags subscriptions
+// @Accept json
+// @Produce json
+// @Param body body dto.CreateSubscriptionRequest true "Данные подписки"
+// @Router /subscriptions [post]
 func (h *SubscriptionHandlers) Create(c *gin.Context) {
+	h.log.Info("starting CREATE", zap.String("id", "CREATE")) // r.log — это наш экземпляр
 	body, ok := c.Get("validatedBody")
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing validated body"})
@@ -52,10 +63,12 @@ func (h *SubscriptionHandlers) Create(c *gin.Context) {
 }
 
 func (h *SubscriptionHandlers) Get(c *gin.Context) {
+	h.log.Info("starting GET", zap.String("id", "ID"))
 	id := c.Param("id")
 
 	sub, err := h.repo.Get(c.Request.Context(), id)
 	if err == repository.ErrSubscriptionNotFound {
+		h.log.Info("subscription not found", zap.String("id", id))
 		c.JSON(http.StatusNotFound, gin.H{"error": "subscription not found"})
 		return
 	}
@@ -67,7 +80,17 @@ func (h *SubscriptionHandlers) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, sub)
 }
 
+// @Summary Получить список подписок
+// @Description Возвращает список подписок с фильтрацией по user_id и пагинацией
+// @Tags subscriptions
+// @Accept json
+// @Produce json
+// @QueryParam user_id query int false "ID пользователя"
+// @QueryParam page query int false "Страница (по умолчанию 1)"
+// @QueryParam per_page query int false "Количество на странице (по умолчанию 20)"
+// @Router /subscriptions [get]
 func (h *SubscriptionHandlers) List(c *gin.Context) {
+	h.log.Info("starting LIST", zap.String("id", "LIST"))
 	subs, err := h.repo.List(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list subscriptions", "details": err.Error()})
@@ -77,6 +100,7 @@ func (h *SubscriptionHandlers) List(c *gin.Context) {
 }
 
 func (h *SubscriptionHandlers) Update(c *gin.Context) {
+	h.log.Info("starting update", zap.String("id", "ID UPDATER"))
 	// 1. Достаём ID из URL
 	id := c.Param("id")
 	if id == "" {
@@ -106,20 +130,40 @@ func (h *SubscriptionHandlers) Update(c *gin.Context) {
 	}
 
 	// 4. Вызываем репозиторий
-	updated, err := h.repo.Update(c.Request.Context(), id, updateFields)
+	sub, err := h.repo.Update(c.Request.Context(), id, updateFields)
+
 	if err != nil {
-		// Тут могут быть ошибки БД: не найден, конфликт, нарушение CHECK и т.д.
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "failed to update subscription",
-			"details": err.Error(),
-		})
+		/* Сначала проверяем: это «нет такой подписки» или реальная ошибка?
+		h.log.Info("DEBUG: inspecting error",
+			zap.String("id", id),
+			zap.String("errorMsg", err.Error()),
+			zap.String("errorType", fmt.Sprintf("%T", err)),
+		)
+		*/
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Это ожидаемая ситуация: ресурса нет. Логируем как Warning, а не Error.
+			h.log.Warn("subscription not found for update",
+				zap.String("id", id),
+			)
+			c.JSON(http.StatusNotFound, gin.H{"error": "subscription not found"})
+			return // Важно: выходим из функции, дальше не идём!
+		}
+
+		// Если это НЕ ErrNoRows — значит, случилась настоящая проблема (SQL-ошибка, сеть и т.д.)
+		h.log.Error("update failed",
+			zap.String("id", id),
+			zap.Error(err),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, updated)
+	c.JSON(http.StatusOK, sub)
+
 }
 
 func (h *SubscriptionHandlers) Delete(c *gin.Context) {
+	h.log.Info("starting DELETE", zap.String("id", "ID DELETE"))
 	id := c.Param("id")
 
 	err := h.repo.Delete(c.Request.Context(), id)
