@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/april1858/subscriptions-service/internal/domain"
 	"github.com/april1858/subscriptions-service/internal/dto"
@@ -62,6 +63,15 @@ func (h *SubscriptionHandlers) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, created)
 }
 
+// GetSubscription
+// @Summary      Получить подписку по ID
+// @Tags         subscriptions
+// @Produce      json
+// @Param        id path string true "UUID подписки"
+// @Success      200 {object} domain.Subscription
+// @Failure      400 {object} map[string]string
+// @Failure      404 {object} map[string]string
+// @Router       /subscriptions/{id} [get]
 func (h *SubscriptionHandlers) Get(c *gin.Context) {
 	h.log.Info("starting GET", zap.String("id", "ID"))
 	id := c.Param("id")
@@ -99,6 +109,15 @@ func (h *SubscriptionHandlers) List(c *gin.Context) {
 	c.JSON(http.StatusOK, subs)
 }
 
+// UpdateSubscription
+// @Summary      Обновить подписку по ID
+// @Tags         subscriptions
+// @Accept       json
+// @Produce      json
+// @Param        id path string true "UUID подписки"
+// @Param        input body domain.SubscriptionUpdate true "Новые данные подписки"
+// @Success      200 {object} domain.Subscription
+// @Router       /subscriptions/{id} [put]
 func (h *SubscriptionHandlers) Update(c *gin.Context) {
 	h.log.Info("starting update", zap.String("id", "ID UPDATER"))
 	// 1. Достаём ID из URL
@@ -149,6 +168,12 @@ func (h *SubscriptionHandlers) Update(c *gin.Context) {
 			return // Важно: выходим из функции, дальше не идём!
 		}
 
+		// DeleteSubscription
+		// @Summary      Удалить подписку по ID
+		// @Tags         subscriptions
+		// @Param        id path string true "UUID подписки"
+		// @Success      204 "No Content"
+		// @Router       /api/v1/subscriptions/{id} [delete]
 		// Если это НЕ ErrNoRows — значит, случилась настоящая проблема (SQL-ошибка, сеть и т.д.)
 		h.log.Error("update failed",
 			zap.String("id", id),
@@ -162,6 +187,12 @@ func (h *SubscriptionHandlers) Update(c *gin.Context) {
 
 }
 
+// DeleteSubscription
+// @Summary      Удалить подписку по ID
+// @Tags         subscriptions
+// @Param        id path string true "UUID подписки"
+// @Success      204 "No Content"
+// @Router       /subscriptions/{id} [delete]
 func (h *SubscriptionHandlers) Delete(c *gin.Context) {
 	h.log.Info("starting DELETE", zap.String("id", "ID DELETE"))
 	id := c.Param("id")
@@ -177,4 +208,39 @@ func (h *SubscriptionHandlers) Delete(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// internal/handlers/subscription_handlers.go
+// @Summary Подсчёт суммарной стоимости подписок за период
+// @Description Считает сумму price_amount по подпискам, пересекающим период [from, to], с опциональной фильтрацией по user_id и service_name.
+// @Tags aggregates
+// @Accept json
+// @Produce json
+// @Param request body dto.SubscriptionCostRequest true "Параметры агрегации"
+// @Success 200 {object} dto.SubscriptionCostResponse
+// @Failure 400 {object} gin.H
+// @Failure 500 {object} gin.H
+// @Router /aggregates/total-cost [post]
+func (h *SubscriptionHandlers) GetTotalCost(c *gin.Context) {
+	var req dto.SubscriptionCostRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		h.log.Error("bad request", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	// Простая валидация периода
+	if req.From.After(req.To) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "from must be before or equal to to"})
+		return
+	}
+
+	stats, err := h.repo.GetTotalCostByPeriod(c.Request.Context(), req.UserID, req.ServiceName, req.From, req.To)
+	if err != nil {
+		h.log.Error("GetTotalCost failed", zap.Error(err), zap.String("from", req.From.Format(time.RFC3339)), zap.String("to", req.To.Format(time.RFC3339)))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, stats)
 }

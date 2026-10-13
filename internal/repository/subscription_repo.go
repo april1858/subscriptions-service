@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 
 	"github.com/april1858/subscriptions-service/internal/domain"
+	"github.com/april1858/subscriptions-service/internal/dto"
 )
 
 var (
@@ -23,6 +25,7 @@ type SubscriptionRepository interface {
 	List(ctx context.Context) ([]domain.Subscription, error)
 	Update(ctx context.Context, id string, sub domain.SubscriptionUpdate) (domain.Subscription, error)
 	Delete(ctx context.Context, id string) error
+	GetTotalCostByPeriod(ctx context.Context, userID *string, serviceName *string, from time.Time, to time.Time) (*dto.SubscriptionCostResponse, error)
 }
 
 type subscriptionRepo struct {
@@ -152,4 +155,56 @@ func (r *subscriptionRepo) Delete(ctx context.Context, id string) error {
 		return ErrSubscriptionNotFound
 	}
 	return nil
+}
+
+// internal/repository/subscription_repo.go
+func (r *subscriptionRepo) GetTotalCostByPeriod(
+	ctx context.Context,
+	userID *string,
+	serviceName *string,
+	from time.Time,
+	to time.Time,
+) (*dto.SubscriptionCostResponse, error) {
+	query := `
+		SELECT COALESCE(SUM(price), 0) AS total_amount
+		FROM subscriptions
+		WHERE start_date <= $2
+		  AND (end_date IS NULL OR end_date >= $1)
+	`
+	args := []any{from, to}
+	nextParam := 3
+
+	if userID != nil {
+		query += fmt.Sprintf(" AND user_id = $%d", nextParam)
+		args = append(args, *userID)
+		nextParam++
+	}
+
+	if serviceName != nil {
+		query += fmt.Sprintf(" AND service_name = $%d", nextParam)
+		args = append(args, *serviceName)
+		nextParam++
+	}
+
+	var total int
+	err := r.db.QueryRow(ctx, query, args...).Scan(&total)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+
+	resp := &dto.SubscriptionCostResponse{
+		TotalAmount: total,
+		Currency:    "RUB",
+		PeriodFrom:  from.Format(time.RFC3339),
+		PeriodTo:    to.Format(time.RFC3339),
+	}
+
+	if userID != nil {
+		resp.Filters.UserID = *userID
+	}
+	if serviceName != nil {
+		resp.Filters.ServiceName = *serviceName
+	}
+
+	return resp, nil
 }
