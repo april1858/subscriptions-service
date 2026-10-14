@@ -24,7 +24,7 @@ func TestGetTotalCostByPeriod(t *testing.T) {
 	defer pool.Close()
 
 	ctx := context.Background()
-	testUserID := "550e8400-e29b-41d4-a716-446655440000"
+	testUserID := "550e8400-e29b-41d4-a716-446655440001"
 
 	// Очистка перед тестом
 	_, err = pool.Exec(ctx, "DELETE FROM subscriptions WHERE user_id = $1", testUserID)
@@ -40,10 +40,10 @@ func TestGetTotalCostByPeriod(t *testing.T) {
 		  ($3, 'YouTube Premium', 799, $2, '2024-10', '2024-12'),
 		  ($4, 'Netflix', 699, '11111111-1111-1111-1111-111111111111', '2024-11', NULL)
 	`,
-		"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+		"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12",
 		testUserID,
-		"b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22",
-		"c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a33",
+		"b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a23",
+		"c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a34",
 	)
 	if err != nil {
 		t.Fatalf("failed to insert test data: %v", err)
@@ -57,14 +57,14 @@ func TestGetTotalCostByPeriod(t *testing.T) {
 	t.Run("all_subscriptions_for_user", func(t *testing.T) {
 		resp, err := repo.GetTotalCostByPeriod(ctx, &testUserID, nil, from, to)
 		assert.NoError(t, err)
-		assert.Equal(t, 1298.0, resp.TotalAmount) // 499 + 799
+		assert.Equal(t, 1298, resp.TotalAmount) // 499 + 799
 	})
 
 	t.Run("filter_by_service", func(t *testing.T) {
 		serviceName := "Spotify"
 		resp, err := repo.GetTotalCostByPeriod(ctx, &testUserID, &serviceName, from, to)
 		assert.NoError(t, err)
-		assert.Equal(t, 499.0, resp.TotalAmount)
+		assert.Equal(t, 499, resp.TotalAmount)
 	})
 
 	t.Run("no_subscriptions_in_period", func(t *testing.T) {
@@ -73,7 +73,7 @@ func TestGetTotalCostByPeriod(t *testing.T) {
 		toOld := time.Date(2023, 12, 31, 23, 59, 59, 0, time.UTC)
 		resp, err := repo.GetTotalCostByPeriod(ctx, &testUserID, nil, fromOld, toOld)
 		assert.NoError(t, err)
-		assert.Equal(t, 0.0, resp.TotalAmount)
+		assert.Equal(t, 0, resp.TotalAmount)
 	})
 
 	t.Run("cross_boundary_subscription", func(t *testing.T) {
@@ -83,6 +83,6 @@ func TestGetTotalCostByPeriod(t *testing.T) {
 		resp, err := repo.GetTotalCostByPeriod(ctx, &testUserID, nil, fromMid, toMid)
 		assert.NoError(t, err)
 		// Должна попасть и Spotify (активна), и YouTube (активна в ноябре)
-		assert.Equal(t, 1298.0, resp.TotalAmount)
+		assert.Equal(t, 1298, resp.TotalAmount)
 	})
 }
